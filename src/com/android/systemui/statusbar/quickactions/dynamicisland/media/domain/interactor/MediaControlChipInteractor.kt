@@ -29,6 +29,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.os.UserHandle
 import androidx.compose.runtime.snapshotFlow
+import com.android.internal.logging.InstanceId
 import com.android.systemui.ActivityIntentHelper
 import com.android.systemui.common.shared.model.ContentDescription
 import com.android.systemui.common.shared.model.Icon as UiIcon
@@ -103,8 +104,23 @@ constructor(
             }
         }
 
+    // The session last seen playing. The media list is only re-sorted once the shade closes, so
+    // "first active" was whichever app had been on top before: a paused player in the background
+    // kept the island while YouTube or another app played.
+    private var lastPlayingId: InstanceId? = null
+
     private val mediaControlChipModelForScene: Flow<MediaControlState> = snapshotFlow {
-        mediaRepository.currentMedia.firstOrNull { it.isActive }?.toMediaControlState(
+        val media = mediaRepository.currentMedia
+        val playing =
+            media.firstOrNull {
+                it.isActive &&
+                    (it.state is MediaSessionState.Playing || it.state is MediaSessionState.Buffering)
+            }
+        if (playing != null) lastPlayingId = playing.instanceId
+        (playing
+                ?: media.firstOrNull { it.isActive && it.instanceId == lastPlayingId }
+                ?: media.firstOrNull { it.isActive })
+            ?.toMediaControlState(
             context = context,
             activityStarter = activityStarter,
             activityIntentHelper = activityIntentHelper,
