@@ -51,7 +51,7 @@ import com.android.systemui.statusbar.quickactions.popups.shared.DynamicIslandFe
 import com.android.systemui.statusbar.quickactions.popups.shared.DynamicIslandFeatureSettings.readDynamicIslandPopupColorMode
 
 @Composable
-private fun Modifier.plainBlurBehind(
+internal fun Modifier.plainBlurBehind(
     shape: Shape,
     tint: Int? = null,
     radius: Dp = PopupBlurRadius,
