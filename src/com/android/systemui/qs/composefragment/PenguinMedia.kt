@@ -48,6 +48,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.PagerState
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
@@ -59,6 +60,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import kotlinx.coroutines.delay
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
@@ -197,6 +200,7 @@ private fun PenguinMediaCardContent(
     val cards = viewModel.cards
     if (cards.isEmpty()) return
     val pagerState = rememberPagerState(pageCount = { cards.size })
+    FollowNowPlaying(viewModel, pagerState)
     LaunchedEffect(pagerState, cards.size) {
         snapshotFlow { pagerState.settledPage }
             .collect { if (it < cards.size) viewModel.onCardSelected(it) }
@@ -224,6 +228,44 @@ private fun PenguinMediaCardContent(
         }
     }
 }
+
+/**
+ * Keeps the one card these panels show on whatever is playing now, or the most recently active
+ * player when nothing is. The pager can't be swiped, and the list is only reordered after the shade
+ * closes, so a player started while another sat paused in the background never came to the front.
+ */
+@Composable
+private fun FollowNowPlaying(viewModel: MediaViewModel, pagerState: PagerState) {
+    // The reorder lands just after the panel appears: jump to it then, and only slide for a
+    // player that takes over while the panel is open.
+    val settled = remember(viewModel) { mutableStateOf(false) }
+    LaunchedEffect(viewModel) {
+        viewModel.reorderForSingleCard()
+        delay(NowPlayingSettleMs)
+        settled.value = true
+    }
+    val target by remember(viewModel) {
+        derivedStateOf {
+            viewModel.cards
+                .indexOfFirst {
+                    val state = it.playPauseAction?.state
+                    state == MediaSessionState.Playing || state == MediaSessionState.Buffering
+                }
+                .coerceAtLeast(0)
+        }
+    }
+    LaunchedEffect(pagerState, target) {
+        if (target < pagerState.pageCount && pagerState.currentPage != target) {
+            if (settled.value) {
+                pagerState.animateScrollToPage(target)
+            } else {
+                pagerState.scrollToPage(target)
+            }
+        }
+    }
+}
+
+private const val NowPlayingSettleMs = 600L
 
 @Composable
 private fun SquareMediaCard(
@@ -1091,6 +1133,7 @@ private fun MyUiMediaCardContent(
     val cards = viewModel.cards
     if (cards.isEmpty()) return
     val pagerState = rememberPagerState(pageCount = { cards.size })
+    FollowNowPlaying(viewModel, pagerState)
     LaunchedEffect(pagerState, cards.size) {
         snapshotFlow { pagerState.settledPage }
             .collect { if (it < cards.size) viewModel.onCardSelected(it) }
