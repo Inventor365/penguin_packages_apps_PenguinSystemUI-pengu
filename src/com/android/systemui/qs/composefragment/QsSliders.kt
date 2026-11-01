@@ -22,6 +22,9 @@ import android.graphics.Canvas
 import android.graphics.Path
 import android.graphics.PointF
 import android.graphics.Rect
+import android.media.AudioAttributes
+import android.media.AudioDeviceCallback
+import android.media.AudioDeviceInfo
 import android.media.AudioManager
 import android.os.Bundle
 import android.os.Trace
@@ -76,6 +79,7 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -222,6 +226,7 @@ import android.hardware.display.BrightnessInfo
 import android.hardware.display.DisplayManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.os.UserHandle
 import android.provider.Settings
 import com.android.systemui.qs.shared.ui.slider.SharedSliderKey
@@ -323,10 +328,19 @@ fun VolumeLayout(
 
     val maxVolume = remember { audioManager.getStreamMaxVolume(AudioManager.STREAM_MUSIC) }
 
+    var holdUntil by remember { mutableLongStateOf(0L) }
     val updateVolumeState = {
         currentVolume = audioManager.getStreamVolume(AudioManager.STREAM_MUSIC)
-        sliderValue = currentVolume.toFloat() / maxVolume.toFloat()
+        if (SystemClock.uptimeMillis() >= holdUntil) {
+            sliderValue = currentVolume.toFloat() / maxVolume.toFloat()
+        }
         isMuted = audioManager.isStreamMute(AudioManager.STREAM_MUSIC) || currentVolume == 0
+    }
+    LaunchedEffect(holdUntil) {
+        if (holdUntil in 1 until Long.MAX_VALUE) {
+            delay(SliderSettleMillis)
+            updateVolumeState()
+        }
     }
 
     DisposableEffect(context) {
@@ -348,6 +362,7 @@ fun VolumeLayout(
     }
 
     val onValueChanged = { newProgress: Float ->
+        holdUntil = Long.MAX_VALUE
         sliderValue = newProgress
         val newVolume = (newProgress * maxVolume).roundToInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
@@ -357,6 +372,7 @@ fun VolumeLayout(
     val onValueChangeFinished = { finalProgress: Float ->
         val newVolume = (finalProgress * maxVolume).roundToInt()
         audioManager.setStreamVolume(AudioManager.STREAM_MUSIC, newVolume, 0)
+        holdUntil = SystemClock.uptimeMillis() + SliderSettleMillis
         Unit
     }
 
@@ -401,6 +417,7 @@ fun VolumeLayout(
                     fraction = sliderValue,
                     icon = painterResource(
                         if (isMuted || currentVolume == 0) R.drawable.ic_volume_off
+                        else if (rememberCosHeadphonesOutput()) R.drawable.ic_headset
                         else R.drawable.ic_volume_media
                     ),
                     iconTint = CosVolumeTint,
@@ -411,6 +428,7 @@ fun VolumeLayout(
                                 scope, onValueChanged, onValueChangeFinished, toggleMute,
                                 iconZone = CosSliderIconZone,
                                 onIconTap = toggleMute,
+                                startValue = { sliderValue },
                             )
                         }
                     )
@@ -458,6 +476,7 @@ fun BrightnessLayout(
 
     var sliderValue by remember { mutableFloatStateOf(0f) }
     var isAuto by remember { mutableStateOf(false) }
+    var holdUntil by remember { mutableLongStateOf(0L) }
 
     val updateBrightnessState = {
         isAuto = Settings.System.getInt(
@@ -476,7 +495,13 @@ fun BrightnessLayout(
                 0f
             }
         } ?: 0f
-        sliderValue = newBrightness
+        if (SystemClock.uptimeMillis() >= holdUntil) sliderValue = newBrightness
+    }
+    LaunchedEffect(holdUntil) {
+        if (holdUntil in 1 until Long.MAX_VALUE) {
+            delay(SliderSettleMillis)
+            updateBrightnessState()
+        }
     }
 
     DisposableEffect(context) {
@@ -510,6 +535,7 @@ fun BrightnessLayout(
     }
 
     val onValueChanged = { newProgress: Float ->
+        holdUntil = Long.MAX_VALUE
         sliderValue = newProgress
         val info: BrightnessInfo? = context.display?.getBrightnessInfo()
         info?.let {
@@ -535,6 +561,7 @@ fun BrightnessLayout(
             val brightnessValue = linear.coerceIn(it.brightnessMinimum, it.brightnessMaximum)
             displayManager.setBrightness(context.displayId, brightnessValue)
         }
+        holdUntil = SystemClock.uptimeMillis() + SliderSettleMillis
         Unit
     }
 
@@ -600,6 +627,7 @@ fun BrightnessLayout(
                                 toggleBrightnessMode,
                                 iconZone = CosSliderIconZone,
                                 onIconTap = toggleBrightnessMode,
+                                startValue = { sliderValue },
                             )
                         }
                     )
@@ -624,6 +652,61 @@ fun BrightnessLayout(
             }
         }
     }
+}
+
+/**
+ * How long a slider keeps the value it was left at. While dragging, and for this long after, the
+ * reported brightness or volume is on its way there (and volume moves in whole steps), so showing
+ * it makes the fill jump around under the finger and back and forward on release.
+ */
+private const val SliderSettleMillis = 400L
+
+private val CosMediaAttributes =
+    AudioAttributes.Builder()
+        .setUsage(AudioAttributes.USAGE_MEDIA)
+        .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
+        .build()
+
+private fun isCosHeadphoneType(type: Int): Boolean =
+    when (type) {
+        AudioDeviceInfo.TYPE_WIRED_HEADSET,
+        AudioDeviceInfo.TYPE_WIRED_HEADPHONES,
+        AudioDeviceInfo.TYPE_USB_HEADSET,
+        AudioDeviceInfo.TYPE_BLUETOOTH_A2DP,
+        AudioDeviceInfo.TYPE_BLE_HEADSET,
+        AudioDeviceInfo.TYPE_BLE_BROADCAST,
+        AudioDeviceInfo.TYPE_HEARING_AID -> true
+        else -> false
+    }
+
+/** Whether media is routed to headphones, read again when an audio device comes or goes. */
+@Composable
+private fun rememberCosHeadphonesOutput(): Boolean {
+    val context = LocalContext.current
+    val audioManager = remember(context) { context.getSystemService(AudioManager::class.java) }
+    var headphones by remember { mutableStateOf(false) }
+    DisposableEffect(audioManager) {
+        val update = {
+            headphones =
+                audioManager.getDevicesForAttributes(CosMediaAttributes).any {
+                    isCosHeadphoneType(it.type)
+                }
+        }
+        val callback =
+            object : AudioDeviceCallback() {
+                override fun onAudioDevicesAdded(addedDevices: Array<out AudioDeviceInfo>?) {
+                    update()
+                }
+
+                override fun onAudioDevicesRemoved(removedDevices: Array<out AudioDeviceInfo>?) {
+                    update()
+                }
+            }
+        update()
+        audioManager.registerAudioDeviceCallback(callback, Handler(Looper.getMainLooper()))
+        onDispose { audioManager.unregisterAudioDeviceCallback(callback) }
+    }
+    return headphones
 }
 
 /** Extra room above a slider's icon that still counts as tapping it. */
@@ -780,7 +863,7 @@ fun Modifier.sliderGesturesHorizontal(
     sliderPointerInput(
         scope,
         vertical = false,
-        progressAt = { (it.x / size.width).coerceIn(0f, 1f) },
+        progressAt = { it.x / size.width },
         onValueChanged,
         onValueChangeFinished,
         onLongPress,
@@ -793,7 +876,8 @@ fun Modifier.sliderGesturesHorizontal(
  * the slider; a smaller wobble during a tap no longer jumps the value. A tap leaves the value
  * alone, and one within [iconZone] of the bottom, where the icon sits, runs [onIconTap]. Taps are
  * consumed so they don't also reach the panel's tap-outside-to-close. A drag that starts across
- * the slider is left alone, for the swipe between the shades.
+ * the slider is left alone, for the swipe between the shades. With [startValue] a drag moves the
+ * value from where it was, as ColorOS does, instead of jumping to the finger.
  */
 fun Modifier.sliderGestures(
     scope: CoroutineScope,
@@ -802,16 +886,18 @@ fun Modifier.sliderGestures(
     onLongPress: () -> Unit,
     iconZone: Dp = 0.dp,
     onIconTap: (() -> Unit)? = null,
+    startValue: (() -> Float)? = null,
 ): Modifier =
     sliderPointerInput(
         scope,
         vertical = true,
-        progressAt = { (1f - it.y / size.height).coerceIn(0f, 1f) },
+        progressAt = { 1f - it.y / size.height },
         onValueChanged,
         onValueChangeFinished,
         onLongPress,
         isIconTap = { onIconTap != null && it.y >= size.height - iconZone.toPx() },
         onIconTap = { onIconTap?.invoke() },
+        startValue = startValue,
     )
 
 private fun Modifier.sliderPointerInput(
@@ -823,6 +909,7 @@ private fun Modifier.sliderPointerInput(
     onLongPress: () -> Unit,
     isIconTap: PointerInputScope.(Offset) -> Boolean,
     onIconTap: () -> Unit,
+    startValue: (() -> Float)? = null,
 ): Modifier = pointerInput(Unit) {
     awaitEachGesture {
         val down = awaitFirstDown(requireUnconsumed = false)
@@ -837,6 +924,7 @@ private fun Modifier.sliderPointerInput(
             }
         var dragging = false
         var lastProgress = 0f
+        var offset = 0f
         while (true) {
             val change =
                 awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: break
@@ -867,12 +955,15 @@ private fun Modifier.sliderPointerInput(
                 longPressJob.cancel()
                 if (isLongPress) return@awaitEachGesture
                 dragging = true
+                if (startValue != null) offset = startValue() - progressAt(change.position)
             }
             change.consume()
-            lastProgress = progressAt(change.position)
+            lastProgress = (progressAt(change.position) + offset).coerceIn(0f, 1f)
             onValueChanged(lastProgress)
         }
         longPressJob.cancel()
+        // The pointer went away mid drag: finish, or the slider keeps holding its value.
+        if (dragging) onValueChangeFinished(lastProgress)
     }
 }
 
