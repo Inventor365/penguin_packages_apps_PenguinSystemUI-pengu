@@ -19,9 +19,11 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Arrangement.spacedBy
 import androidx.compose.foundation.layout.Box
@@ -60,9 +62,11 @@ import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -121,6 +125,8 @@ private val ColorOsRed = Color(0xFFE5483D)
 private val ColorOsGreen = Color(0xFF21B04B)
 private val ColorOsInk = Color(0xFF1C1C1E)
 private val ColorOsActiveFill = Color(0xF2FFFFFF)
+private val ColorOsFlatDiscDark = Color(0x24FFFFFF)
+private val ColorOsFlatDiscLight = Color(0x8CFFFFFF)
 internal val ColorOsLabel = Color(0xE6FFFFFF)
 private val ColorOsSubLabel = Color(0x99FFFFFF)
 private val ColorOsPill = RoundedCornerShape(percent = 50)
@@ -234,7 +240,14 @@ private fun ColorOsConnectionPill(tile: TileViewModel) {
                 Modifier.clip(CircleShape).clickable { tile.toggleClick() }
             }
         ) {
-            ColorOsCircle(icon, active, 46.dp, colorOsActiveTint(tile.spec.spec), tile.spec.spec)
+            ColorOsCircle(
+                icon,
+                active,
+                46.dp,
+                colorOsActiveTint(tile.spec.spec),
+                tile.spec.spec,
+                flatWhenOff = true,
+            )
         }
         Column(Modifier.weight(1f)) {
             Text(
@@ -266,8 +279,20 @@ internal fun ColorOsCircle(
     activeTint: Color,
     spec: String? = null,
     interaction: InteractionSource? = null,
+    flatWhenOff: Boolean = false,
 ) {
     val fill by animateFloatAsState(if (active) 1f else 0f, tween(200, easing = ColorOsEase))
+    // The circle of a pill that is off is a flat disc, as in ColorOS. It already sits on the pill's
+    // glass, and another blur region inside that one would only cost SurfaceFlinger more work.
+    val surface =
+        if (flatWhenOff && !active) {
+            Modifier.clip(CircleShape).background(
+                if (isSystemInDarkTheme()) ColorOsFlatDiscDark else ColorOsFlatDiscLight,
+                CircleShape,
+            )
+        } else {
+            Modifier.cosGlass(CircleShape, active)
+        }
     val iconColor by
         animateColorAsState(if (active) activeTint else Color.White, tween(200, easing = ColorOsEase))
     val pop = remember { Animatable(1f) }
@@ -282,7 +307,7 @@ internal fun ColorOsCircle(
         modifier =
             Modifier.size(size)
                 .then(if (interaction != null) Modifier.cosPress(interaction) else Modifier)
-                .cosGlass(CircleShape, active)
+                .then(surface)
                 .drawBehind { if (fill > 0f) drawCircle(ColorOsActiveFill, alpha = fill) }
                 .then(if (interaction != null) Modifier.cosSpotLight(CircleShape) else Modifier),
         contentAlignment = Alignment.Center,
@@ -659,15 +684,30 @@ private fun ColorOsTile(tile: TileViewModel, modifier: Modifier = Modifier) {
             tile.spec.spec,
             interaction,
         )
-        Text(
-            text = uiState.label,
-            color = ColorOsLabel,
-            fontSize = 12.sp,
-            lineHeight = 14.sp,
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
-            textAlign = TextAlign.Center,
+        Row(
             modifier = Modifier.padding(top = 7.dp, start = 2.dp, end = 2.dp),
-        )
+            horizontalArrangement = Arrangement.Center,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                text = uiState.label,
+                color = ColorOsLabel,
+                fontSize = 12.sp,
+                lineHeight = 14.sp,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.weight(1f, fill = false),
+            )
+            // Marks the tiles whose long press opens a panel, see onLongClick above.
+            if (uiState.handlesToggleClick) {
+                Image(
+                    painter = painterResource(PenguinR.drawable.ic_cos_tile_chevron),
+                    contentDescription = null,
+                    colorFilter = ColorFilter.tint(ColorOsLabel),
+                    modifier = Modifier.size(14.dp),
+                )
+            }
+        }
     }
 }
