@@ -128,6 +128,7 @@ import com.android.systemui.qs.composefragment.effectiveQsPanelStyle
 import com.android.systemui.qs.composefragment.secureIntSetting
 import com.android.systemui.qs.composefragment.VolumeLayout
 import com.android.systemui.qs.composefragment.ui.GridAnchor
+import com.android.systemui.qs.composefragment.cosExpansionReveal
 import com.android.systemui.qs.panels.ui.compose.TileGrid
 import com.android.systemui.qs.shared.style.LocalQsPanelStyle
 import com.android.systemui.qs.shared.style.QsPanelStyle
@@ -400,7 +401,7 @@ private fun ContentScope.ColorOsQuickSettingsContent(
     val outerGlassAlpha = LocalGlassBlurAlpha.current
     CompositionLocalProvider(
         LocalQsHostTransition provides transition,
-        LocalGlassBlurAlpha provides { outerGlassAlpha() * glassFade.value },
+        LocalGlassBlurAlpha provides { cosExpansionReveal(outerGlassAlpha()) * glassFade.value },
     ) {
         QsColumns(
             gap = ColorOsGap,

@@ -17,6 +17,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import com.android.systemui.penguin.CosFeature
 import com.android.systemui.penguin.rememberCosFeature
+import com.android.systemui.qs.shared.style.LocalGlassBlurAlpha
 import com.android.systemui.qs.ui.composable.LocalQsHostTransition
 import kotlin.math.PI
 import kotlin.math.pow
@@ -24,6 +25,24 @@ import kotlinx.coroutines.delay
 
 private const val STAGGER_MS = 16L
 private const val HIDE_RESPONSE = 0.1f
+
+/** The panel starts to show at this fraction of its opening, glass and modules together. */
+private const val EXPANSION_REVEAL_START = 0.25f
+
+/** The panel is fully shown at this fraction of its opening. */
+private const val EXPANSION_REVEAL_END = 0.85f
+
+/**
+ * How much of the panel to show at [expansion], 0 when closed and 1 when open. SurfaceFlinger draws
+ * the glass from blur regions and the modules fade on springs of their own, so without a shared
+ * curve a slow drag shows the content at full strength over glass that has barely started.
+ */
+internal fun cosExpansionReveal(expansion: Float): Float {
+    val t =
+        ((expansion - EXPANSION_REVEAL_START) / (EXPANSION_REVEAL_END - EXPANSION_REVEAL_START))
+            .coerceIn(0f, 1f)
+    return t * t * (3f - 2f * t)
+}
 
 @Composable
 fun Modifier.cosModuleReveal(index: Int): Modifier {
@@ -46,10 +65,11 @@ fun Modifier.cosModuleReveal(index: Int): Modifier {
         }
     }
 
+    val shown = LocalGlassBlurAlpha.current
     return graphicsLayer {
         scaleX = scale
         scaleY = scale
-        this.alpha = alpha
+        this.alpha = alpha * shown()
     }
 }
 
