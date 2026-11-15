@@ -118,6 +118,7 @@ import com.android.systemui.media.remedia.shared.model.MediaSessionState
 import com.android.systemui.res.R
 import com.android.systemui.media.remedia.ui.viewmodel.MediaDeviceChipViewModel
 import com.android.systemui.qs.shared.style.glassPress
+import com.android.systemui.qs.shared.style.isStockQsStyle
 import com.android.systemui.qs.shared.style.liquidGlassOn
 import com.android.systemui.qs.shared.style.glassRim
 import kotlin.math.PI
@@ -1016,6 +1017,9 @@ private fun MediaControl(
         } else {
             iconRes
         }
+    // White suits the dark glass panels; the stock panel follows the theme like the title does.
+    val controlTint =
+        if (liquidGlassOn && !isStockQsStyle) Color.White else MaterialTheme.colorScheme.onSurface
     val interactive = LocalMediaCardInteractive.current
     Box(
         modifier =
@@ -1031,14 +1035,14 @@ private fun MediaControl(
         if (iconRes == null) {
             Icon(
                 icon = model.icon,
-                tint = tint ?: if (liquidGlassOn) Color.White else MaterialTheme.colorScheme.onSurface,
+                tint = tint ?: controlTint,
                 modifier = Modifier.size(size * 0.6f),
             )
         } else {
             M3Icon(
                 painter = painterResource(iconRes),
                 contentDescription = null,
-                tint = tint ?: if (liquidGlassOn) Color.White else MaterialTheme.colorScheme.onSurface,
+                tint = tint ?: controlTint,
                 modifier = Modifier.size(size * 0.6f),
             )
         }
