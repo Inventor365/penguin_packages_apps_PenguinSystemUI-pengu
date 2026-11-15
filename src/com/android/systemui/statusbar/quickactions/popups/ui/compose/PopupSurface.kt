@@ -68,7 +68,9 @@ private fun Modifier.plainBlurBehind(
     val context = LocalContext.current
     val holder = remember(view) { arrayOfNulls<BackgroundBlurDrawable>(1) }
     val glassAlpha = LocalIslandGlassAlpha.current
-    val overlayColor = tint ?: remember(context) { AxBlurColors.surfaceLightTint(context) }
+    // The themed tint must hide what is behind: its text follows the theme, not the app behind.
+    val overlayColor =
+        tint ?: remember(context) { atLeastAlpha(AxBlurColors.surfaceLightTint(context), 0xCC) }
     val blurEnabled =
         remember(context) {
             context.getSystemService(WindowManager::class.java)?.isCrossWindowBlurEnabled == true
@@ -125,20 +127,20 @@ fun PopupSurface(
     content: @Composable () -> Unit,
 ) {
     if (liquidGlassEnabled() && colorMode != POPUP_COLOR_MODE_SOLID_BLACK) {
-        // Liquid glass: frosted blur of what is behind, a light tint and the glass rim, like the
-        // ColorOS 17 live cards. Content is white on it in light and dark themes. The blur
-        // background keeps the rim but blurs harder under a dark tint.
+        // Liquid glass: frosted blur of what is behind, a dark tint and the glass rim, like the
+        // ColorOS 17 live cards. Content is white in light and dark themes, so the tint must keep
+        // it readable over a light app too. The blur background blurs harder under a darker tint.
         val heavy = colorMode == POPUP_COLOR_MODE_BLUR
         Box(
             modifier =
                 modifier
                     .plainBlurBehind(
                         shape,
-                        // A light frost that keeps what is behind readable, as on ColorOS 17;
-                        // tune with debug.lg.island_blur (dp) and debug.lg.island_surface.
+                        // Dark enough for white text over a white app (about 5.7:1); tune with
+                        // debug.lg.island_blur (dp) and debug.lg.island_surface.
                         tint =
-                            if (heavy) LiquidGlassTune.color("island_blur_surface", 0x59000000)
-                            else LiquidGlassTune.color("island_surface", 0x1AFFFFFF),
+                            if (heavy) LiquidGlassTune.color("island_blur_surface", HeavyGlassTint)
+                            else LiquidGlassTune.color("island_surface", GlassTint),
                         radius =
                             if (heavy) PopupBlurRadius
                             else LiquidGlassTune.f("island_blur", 14f).dp,
@@ -182,5 +184,11 @@ fun PopupSurface(
 }
 
 private const val PLAIN_BLUR = -1
+
+private fun atLeastAlpha(color: Int, alpha: Int): Int =
+    if ((color ushr 24) >= alpha) color else (color and 0x00FFFFFF) or (alpha shl 24)
+
+private const val GlassTint = 0x99000000.toInt()
+private const val HeavyGlassTint = 0xB3000000.toInt()
 private val PopupBlurRadius = 34.dp
 private val GlassNoBlurFill = Color(0xE62C2C2E)
