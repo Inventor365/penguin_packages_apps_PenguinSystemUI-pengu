@@ -564,7 +564,7 @@ private fun ColorOsTile(tile: TileViewModel, modifier: Modifier = Modifier) {
         modifier =
             modifier
                 .fillMaxHeight()
-                .alpha(if (unavailable) 0.45f else 1f)
+                .alpha(if (unavailable) 0.6f else 1f)
                 .combinedClickable(
                     interactionSource = interaction,
                     indication = null,

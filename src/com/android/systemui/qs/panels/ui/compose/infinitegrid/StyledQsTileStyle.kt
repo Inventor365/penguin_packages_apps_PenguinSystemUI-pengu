@@ -8,6 +8,7 @@ package com.android.systemui.qs.panels.ui.compose.infinitegrid
 import android.os.SystemClock
 import android.service.quicksettings.Tile.STATE_ACTIVE
 import android.service.quicksettings.Tile.STATE_INACTIVE
+import android.service.quicksettings.Tile.STATE_UNAVAILABLE
 import androidx.compose.animation.core.AnimationSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
@@ -125,6 +126,7 @@ private object StyledTileColors {
     private const val GlassIconSurfaceAlpha = GlassSurfaceAlpha
     private const val ActiveTileAlpha = 1f
     private val GlassGlyph = Color(0xFF1C1C1E)
+    private const val UnavailableContentAlpha = 0.55f
 
     private val surfaceAlpha: Float
         @Composable @ReadOnlyComposable get() = if (isStockQsStyle) 1f else GlassSurfaceAlpha
@@ -216,13 +218,18 @@ private object StyledTileColors {
     fun unavailableTileColors(): TileColors {
         val surfaceColor =
             tileSurface()
-        val onSurfaceVariantColor = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .38f)
+        val glassTiles = liquidGlassOn && !isStockQsStyle
+        // On the glass the stock 38% grey disappears; a dimmed white still reads as off.
+        val content =
+            if (glassTiles) Color.White.copy(alpha = UnavailableContentAlpha)
+            else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .38f)
         return TileColors(
             background = surfaceColor,
             iconBackground = surfaceColor,
-            label = onSurfaceVariantColor,
-            secondaryLabel = onSurfaceVariantColor,
-            icon = onSurfaceVariantColor,
+            label = content,
+            secondaryLabel = content,
+            icon = content,
+            circleAroundIcon = if (glassTiles) LiquidGlassControl else Color.Transparent,
         )
     }
 
@@ -235,6 +242,19 @@ private object StyledTileColors {
     @ReadOnlyComposable
     fun stockGlassColors(uiState: TileUiState, iconOnly: Boolean, stock: TileColors): TileColors =
         when {
+            // Stock dims a disabled tile to 38% grey on an 18% surface, which vanishes over the
+            // glass; keep the inactive surface and dim only its content.
+            uiState.visualState == STATE_UNAVAILABLE -> {
+                val content = MaterialTheme.colorScheme.onSurface.copy(alpha = UnavailableContentAlpha)
+                stock.copy(
+                    background = LocalAndroidColorScheme.current.surfaceEffect1,
+                    iconBackground = Color.Transparent,
+                    label = content,
+                    secondaryLabel = content,
+                    icon = content,
+                    circleAroundIcon = Color.Transparent,
+                )
+            }
             uiState.visualState != STATE_ACTIVE -> stock
             uiState.handlesToggleClick && !iconOnly ->
                 stock.copy(
