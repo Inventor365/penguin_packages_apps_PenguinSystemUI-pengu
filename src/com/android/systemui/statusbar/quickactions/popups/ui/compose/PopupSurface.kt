@@ -176,7 +176,8 @@ fun PopupSurface(
                 color = MaterialTheme.colorScheme.surfaceContainerHigh,
                 contentColor = MaterialTheme.colorScheme.onSurface,
                 shape = shape,
-                shadowElevation = shadowElevation,
+                // The island window clips the shadow into ghost edges.
+                shadowElevation = 0.dp,
                 modifier = modifier,
             ) { content() }
         }
